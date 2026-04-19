@@ -20,6 +20,14 @@ import config
 import converter
 import printer
 
+# Valid fields and their allowed values for setting toggles
+_VALID_SETTINGS = {
+    "color": {"color", "bw"},
+    "sides": {"one", "long", "short"},
+    "orientation": {"portrait", "landscape"},
+}
+_VALID_NUP = set(config.NUP_OPTIONS)
+
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     level=logging.INFO,
@@ -260,6 +268,12 @@ async def handle_document(
     )
     await tg_file.download_to_drive(local_path)
 
+    # Check for empty file
+    if local_path.stat().st_size == 0:
+        await update.message.reply_text("File is empty.")
+        converter.cleanup_temp_files(local_path)
+        return ConversationHandler.END
+
     # Init job data
     job = {
         "file_path": local_path,
@@ -368,11 +382,15 @@ async def handle_setting_toggle(
         elif value == "dec":
             s["copies"] = max(s["copies"] - 1, 1)
     elif field == "nup":
-        s["nup"] = int(value)
+        nup_val = int(value)
+        if nup_val in _VALID_NUP:
+            s["nup"] = nup_val
     elif field == "page_range":
-        s["page_range"] = value
-    else:
-        s[field] = value
+        if value == "all":
+            s["page_range"] = value
+    elif field in _VALID_SETTINGS:
+        if value in _VALID_SETTINGS[field]:
+            s[field] = value
 
     text, keyboard = build_settings_screen(job)
     await query.edit_message_text(text, reply_markup=keyboard)
@@ -391,21 +409,75 @@ async def prompt_page_range(
     return PAGE_RANGE
 
 
+def _validate_page_range(text: str, total_pages: int | None) -> str | None:
+    """Validate a page range string. Returns error message or None if valid.
+
+    Rules:
+    - Only digits, commas, dashes, spaces allowed
+    - Each segment is either a single page or a range (start-end)
+    - All pages must be >= 1
+    - In ranges, start must be <= end
+    - If total_pages is known, all pages must be <= total_pages
+    """
+    cleaned = text.replace(" ", "")
+    if not cleaned:
+        return "Empty page range."
+
+    if not re.match(r"^[\d,\-]+$", cleaned):
+        return "Invalid characters. Use e.g. 1-3, 5, 8-10"
+
+    segments = [s for s in cleaned.split(",") if s]
+    if not segments:
+        return "Empty page range."
+
+    max_page = 0
+    for segment in segments:
+        if "-" in segment:
+            parts = segment.split("-")
+            if len(parts) != 2 or not parts[0] or not parts[1]:
+                return f"Invalid range: {segment}"
+            try:
+                start, end = int(parts[0]), int(parts[1])
+            except ValueError:
+                return f"Invalid range: {segment}"
+            if start < 1:
+                return f"Page numbers start at 1, got {start}."
+            if end < 1:
+                return f"Page numbers start at 1, got {end}."
+            if start > end:
+                return f"Invalid range {start}-{end}: start is bigger than end."
+            max_page = max(max_page, end)
+        else:
+            try:
+                page = int(segment)
+            except ValueError:
+                return f"Invalid page: {segment}"
+            if page < 1:
+                return f"Page numbers start at 1, got {page}."
+            max_page = max(max_page, page)
+
+    if total_pages and max_page > total_pages:
+        return f"Document only has {total_pages} pages, but you requested up to page {max_page}."
+
+    return None
+
+
 async def handle_page_range_input(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> int:
     """Receive typed page range, validate, update settings."""
     text = update.message.text.strip()
 
-    if not re.match(r"^[\d\s,\-]+$", text):
-        await update.message.reply_text(
-            "Invalid format. Use e.g. 1-3, 5, 8-10"
-        )
-        return PAGE_RANGE
-
     job = context.user_data.get("job")
     if not job:
         return ConversationHandler.END
+
+    error = _validate_page_range(text, job.get("page_count"))
+    if error:
+        await update.message.reply_text(
+            f"{error}\nTry again (e.g. 1-3, 5, 8-10):"
+        )
+        return PAGE_RANGE
 
     job["settings"]["page_range"] = text.replace(" ", "")
     msg_text, keyboard = build_settings_screen(job)
@@ -430,12 +502,27 @@ async def handle_print(
         await query.edit_message_text("No file to print.")
         return ConversationHandler.END
 
+    # Validate page range one more time before printing
+    s = job["settings"]
+    if s["page_range"] != "all":
+        error = _validate_page_range(s["page_range"], job.get("page_count"))
+        if error:
+            await query.answer(error, show_alert=True)
+            return SETTINGS
+
     print_path = job["pdf_path"] or job["file_path"]
+
+    # Check file is not empty
+    if not Path(print_path).exists() or Path(print_path).stat().st_size == 0:
+        await query.edit_message_text("File is empty or missing.")
+        return ConversationHandler.END
+
     summary = _build_settings_summary(job["settings"])
 
     try:
         job_id = await printer.async_submit_job(
-            print_path, job["original_name"], job["settings"]
+            print_path, job["original_name"], job["settings"],
+            is_image=job.get("is_image", False),
         )
     except Exception as e:
         logger.error("Print submission failed: %s", e)
@@ -470,6 +557,7 @@ async def handle_print(
         "file_path": str(job["file_path"]),
         "pdf_path": str(job["pdf_path"]) if job["pdf_path"] else None,
         "settings": dict(job["settings"]),
+        "is_image": job.get("is_image", False),
         "last_state": None,
     }
 
@@ -621,7 +709,8 @@ async def handle_retry(
 
     try:
         new_id = await printer.async_submit_job(
-            Path(print_path), failed["original_name"], failed["settings"]
+            Path(print_path), failed["original_name"], failed["settings"],
+            is_image=failed.get("is_image", False),
         )
     except Exception as e:
         await query.edit_message_text(f"Retry failed: {e}")

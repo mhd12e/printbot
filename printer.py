@@ -110,20 +110,23 @@ class CupsPrinter:
         )
 
     def submit_job(
-        self, file_path: Path, title: str, settings: dict
+        self, file_path: Path, title: str, settings: dict,
+        is_image: bool = False,
     ) -> int:
         """Submit a print job. Returns CUPS job ID."""
         options: dict[str, str] = {}
         options["print-color-mode"] = COLOR_OPTIONS[settings["color"]]
-        options["sides"] = SIDES_OPTIONS[settings["sides"]]
         options["orientation-requested"] = ORIENTATION_OPTIONS[
             settings["orientation"]
         ]
-        options["number-up"] = str(settings["nup"])
         options["copies"] = str(settings["copies"])
 
-        if settings["page_range"] != "all":
-            options["page-ranges"] = settings["page_range"]
+        # These options only apply to multi-page documents, not images
+        if not is_image:
+            options["sides"] = SIDES_OPTIONS[settings["sides"]]
+            options["number-up"] = str(settings["nup"])
+            if settings["page_range"] != "all":
+                options["page-ranges"] = settings["page_range"]
 
         try:
             job_id = self._conn.printFile(
@@ -219,12 +222,13 @@ async def async_submit_job(
     file_path: Path,
     title: str,
     settings: dict,
+    is_image: bool = False,
     printer_name: str = PRINTER_NAME,
 ) -> int:
     loop = asyncio.get_event_loop()
-    printer = CupsPrinter(printer_name)
+    p = CupsPrinter(printer_name)
     return await loop.run_in_executor(
-        None, partial(printer.submit_job, file_path, title, settings)
+        None, partial(p.submit_job, file_path, title, settings, is_image)
     )
 
 
