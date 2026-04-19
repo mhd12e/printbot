@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # PrintBot one-liner installer
-# Usage: curl -fsSL https://raw.githubusercontent.com/mhd12e/printbot/main/install.sh | sudo bash
+# Usage: sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/mhd12e/printbot/main/install.sh)"
 
 REPO="https://github.com/mhd12e/printbot.git"
 INSTALL_DIR="$HOME/printbot"
@@ -23,7 +23,7 @@ echo ""
 # Check root
 if [ "$EUID" -ne 0 ]; then
     echo -e "${RED}Run with sudo:${NC}"
-    echo "  curl -fsSL https://raw.githubusercontent.com/mhd12e/printbot/main/install.sh | sudo bash"
+    echo '  sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/mhd12e/printbot/main/install.sh)"'
     exit 1
 fi
 

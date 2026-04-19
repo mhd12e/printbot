@@ -44,7 +44,7 @@ The bot tells you when:
 One command:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/mhd12e/printbot/main/install.sh | sudo bash
+sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/mhd12e/printbot/main/install.sh)"
 ```
 
 This clones the repo to `~/printbot` and runs the full installer: system packages, CUPS, printer drivers, Python venv, config prompts, systemd service, and adds `printbot` to your PATH.
