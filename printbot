@@ -503,6 +503,7 @@ cmd_install() {
     # Step 6: Temp dir
     step 6 7 "Creating temp directory..."
     mkdir -p /tmp/printbot
+    chown "$SUDO_USER:$(id -gn "$SUDO_USER")" /tmp/printbot
     success "Done."
 
     # Step 7: Service + CLI
@@ -605,6 +606,8 @@ cmd_update() {
     for f in "$ENV_FILE" "$USERS_FILE" "$VERSION_FILE"; do
         [ -f "$f" ] && chown "$run_user:$run_group" "$f"
     done
+    mkdir -p /tmp/printbot
+    chown "$run_user:$run_group" /tmp/printbot
     success "Permissions fixed."
 
     _run_migrations

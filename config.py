@@ -60,3 +60,8 @@ AVAILABLE_OPTIONS = {
 MAX_VOICE_DURATION = 60
 
 TEMP_DIR.mkdir(parents=True, exist_ok=True)
+
+# Ensure temp dir is writable (may have been created by root during install)
+if not os.access(TEMP_DIR, os.W_OK):
+    import sys
+    print(f"WARNING: {TEMP_DIR} is not writable. Run: sudo printbot update", file=sys.stderr)
