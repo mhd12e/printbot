@@ -451,6 +451,7 @@ cmd_install() {
 
     "$VENV_DIR/bin/pip" install --upgrade pip -q
     "$VENV_DIR/bin/pip" install -r "$BOT_DIR/requirements.txt" -q
+    chown -R "$SUDO_USER:$(id -gn "$SUDO_USER")" "$VENV_DIR"
     success "Python packages installed."
 
     # Step 5: Config
@@ -478,10 +479,12 @@ cmd_install() {
         [ -n "${GEMINI_KEY:-}" ] && echo "GEMINI_API_KEY=$GEMINI_KEY"
     } > "$ENV_FILE"
     chmod 600 "$ENV_FILE"
+    chown "$SUDO_USER:$(id -gn "$SUDO_USER")" "$ENV_FILE"
     _rollback_push "rm -f '$ENV_FILE'"
 
     # Create .users with labels
     touch "$USERS_FILE"
+    chown "$SUDO_USER:$(id -gn "$SUDO_USER")" "$USERS_FILE"
     _rollback_push "rm -f '$USERS_FILE'"
     echo ""
     info "Name your users (optional, for 'printbot user list')"
@@ -512,6 +515,7 @@ cmd_install() {
 
     chmod +x "$BOT_DIR/printbot"
     _set_version
+    chown "$SUDO_USER:$(id -gn "$SUDO_USER")" "$VERSION_FILE"
     _rollback_push "rm -f '$VERSION_FILE'"
 
     systemctl start "$SERVICE_NAME"
@@ -591,6 +595,17 @@ cmd_update() {
     if [ -n "$OLD_COMMIT" ]; then
         _rollback_push "'$VENV_DIR/bin/pip' install -r '$BOT_DIR/requirements.txt' -q 2>/dev/null || true"
     fi
+
+    # Fix file ownership (repairs installs where root owned user files)
+    local run_user="${SUDO_USER:-$USER}"
+    local run_group
+    run_group=$(id -gn "$run_user")
+    info "Fixing file permissions..."
+    chown -R "$run_user:$run_group" "$VENV_DIR"
+    for f in "$ENV_FILE" "$USERS_FILE" "$VERSION_FILE"; do
+        [ -f "$f" ] && chown "$run_user:$run_group" "$f"
+    done
+    success "Permissions fixed."
 
     _run_migrations
     _install_service
