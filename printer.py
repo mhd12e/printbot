@@ -121,11 +121,20 @@ class CupsPrinter:
         ]
         options["copies"] = str(settings["copies"])
 
-        # Pages per sheet (works for both documents and images)
-        options["number-up"] = str(settings["nup"])
-
-        if not is_image:
-            # Document-only options
+        if is_image:
+            # For images, nup means size scaling (CUPS number-up only
+            # works with multi-page documents, not single images)
+            nup = settings.get("nup", 1)
+            if nup == 1:
+                options["fit-to-page"] = "true"
+            else:
+                # Scale so the image would fit N-up on a page
+                # nup=2 -> 70%, nup=4 -> 50%, nup=6 -> 40%, nup=9 -> 33%
+                scale = {2: 70, 4: 50, 6: 40, 9: 33}.get(nup, 100)
+                options["scaling"] = str(scale)
+        else:
+            # Document options
+            options["number-up"] = str(settings["nup"])
             options["sides"] = SIDES_OPTIONS[settings["sides"]]
             if settings["page_range"] != "all":
                 options["page-ranges"] = settings["page_range"]
