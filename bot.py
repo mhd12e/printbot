@@ -648,12 +648,19 @@ async def _process_voice(
         )
         return None
 
-    tg_file = await voice.get_file()
-    local_path = (
-        config.TEMP_DIR
-        / f"{update.effective_user.id}_{voice.file_unique_id}.ogg"
-    )
-    await tg_file.download_to_drive(local_path)
+    try:
+        tg_file = await voice.get_file()
+        local_path = (
+            config.TEMP_DIR
+            / f"{update.effective_user.id}_{voice.file_unique_id}.ogg"
+        )
+        await tg_file.download_to_drive(local_path)
+    except Exception as e:
+        logger.error("Voice download failed: %s", e)
+        await update.message.reply_text(
+            "Couldn't download voice note. Check your connection and try again."
+        )
+        return None
 
     msg = await update.message.reply_text("Listening\u2026")
 
