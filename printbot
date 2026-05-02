@@ -333,6 +333,12 @@ _install_service() {
     local run_group
     run_group=$(id -gn "$run_user")
 
+    # tmpfiles.d entry — recreates /tmp/printbot on boot
+    sudo tee /etc/tmpfiles.d/printbot.conf > /dev/null <<TMPEOF
+d /tmp/printbot 0755 $run_user $run_group -
+TMPEOF
+    sudo systemd-tmpfiles --create /etc/tmpfiles.d/printbot.conf 2>/dev/null || true
+
     sudo tee /etc/systemd/system/${SERVICE_NAME}.service > /dev/null <<SERVICEEOF
 [Unit]
 Description=Telegram PrintBot
@@ -344,6 +350,8 @@ Type=simple
 User=$run_user
 Group=$run_group
 WorkingDirectory=$BOT_DIR
+ExecStartPre=+/bin/mkdir -p /tmp/printbot
+ExecStartPre=+/bin/chown $run_user:$run_group /tmp/printbot
 ExecStart=$VENV_DIR/bin/python3 $BOT_DIR/bot.py
 Restart=always
 RestartSec=5
@@ -659,6 +667,7 @@ cmd_uninstall() {
     systemctl stop "$SERVICE_NAME" 2>/dev/null || true
     systemctl disable "$SERVICE_NAME" 2>/dev/null || true
     rm -f "/etc/systemd/system/${SERVICE_NAME}.service"
+    rm -f /etc/tmpfiles.d/printbot.conf
     systemctl daemon-reload
     success "Service removed."
 
